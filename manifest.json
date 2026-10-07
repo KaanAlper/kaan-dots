@@ -81,6 +81,27 @@
       "executable": [
         "howdy-gtk"
       ]
+    },
+    {
+      "id": "sddm-face",
+      "title": "SDDM giriş ekranında yüz tanıma",
+      "desc": "Açılıştaki giriş ekranına yüz tanıma ekler; parola aynen çalışır. Parolayı boş bırakıp Enter'a basınca kamera taranır. Dikkat: Howdy canlılık denetimi yapmaz, yüzle girişte anahtarlık kilitli kalır. Varsayılan olarak işaretsiz.",
+      "kind": "check",
+      "check": [
+        {
+          "file_has": [
+            "/etc/pam.d/sddm",
+            "pam_howdy.so"
+          ]
+        }
+      ],
+      "requires": [
+        "howdy-packages",
+        "howdy-config"
+      ],
+      "terminal": true,
+      "default": false,
+      "install": "sudo bash {repo}/items/sddm-face/enable.sh"
     }
   ]
 }

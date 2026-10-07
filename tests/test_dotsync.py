@@ -305,3 +305,14 @@ def test_check_file_has_condition(tmp_path):
     assert dotsync._failed_conditions(conds)  # satır yok -> başarısız
     cfg.write_text("auth sufficient pam_howdy.so\nauth include system-login\n")
     assert dotsync._failed_conditions(conds) == []
+
+
+def test_status_exposes_default_checked_flag(tmp_path):
+    repo = make_repo(tmp_path)
+    manifest = json.loads((repo / "manifest.json").read_text())
+    manifest["items"][1]["default"] = False  # p: işaretsiz gelsin
+    (repo / "manifest.json").write_text(json.dumps(manifest))
+    status = {s["id"]: s for s in dotsync.compute_status(
+        dotsync.load_manifest(repo), repo, set(), is_pkg_installed=lambda p: False)}
+    assert status["p"]["default"] is False
+    assert status["a"]["default"] is True

@@ -108,7 +108,7 @@ ShellRoot {
                         items.append({
                             id: s.id, title: s.title, desc: s.desc, kind: s.kind,
                             terminal: s.terminal, missing: s.missing.join(", "),
-                            checked: true, runState: "idle", detail: ""
+                            checked: s.default !== false, runState: "idle", detail: ""
                         });
                     }
                     root.recount();

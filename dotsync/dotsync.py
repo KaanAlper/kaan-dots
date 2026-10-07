@@ -176,6 +176,7 @@ def compute_status(
                 "missing": missing,
                 "declined": item["id"] in declined,
                 "terminal": bool(item.get("terminal")),
+                "default": bool(item.get("default", True)),
                 "requires": item.get("requires", []),
             }
         )
