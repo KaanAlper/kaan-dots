@@ -62,6 +62,17 @@
       ],
       "terminal": true,
       "install": "sudo bash {repo}/items/howdy-config/setup.sh"
+    },
+    {
+      "id": "howdy-stub",
+      "title": "Howdy açılır pencere bastırıcı",
+      "desc": "Howdy her taramada 'Howdy Authentication' penceresi açar; kilit ekranı yeniden denemeleriyle masaüstünde birikiyordu. ~/.local/bin/howdy-gtk yer tutucusu bunu sessizce yutar.",
+      "kind": "files",
+      "src": "items/howdy-stub",
+      "dest": "~/.local/bin",
+      "executable": [
+        "howdy-gtk"
+      ]
     }
   ]
 }

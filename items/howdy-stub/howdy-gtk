@@ -1,0 +1,10 @@
+#!/bin/sh
+# Howdy her yüz taramasında "Howdy Authentication" GTK penceresi açar; kilit ekranı yeniden denemeleriyle
+# masaüstünde birikiyordu. --start-auth-ui çağrısını sessizce yut (stdin'i okumaya devam et: compare.py
+# buraya yazar, süreç hemen çıkarsa BrokenPipe ile tarama çöker). Diğer kullanımlar gerçek binary'ye gider.
+for arg in "$@"; do
+    if [ "$arg" = "--start-auth-ui" ]; then
+        exec cat >/dev/null
+    fi
+done
+exec /usr/bin/howdy-gtk "$@"

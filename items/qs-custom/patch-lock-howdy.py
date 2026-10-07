@@ -7,7 +7,9 @@ Patches two dots files (both are in installed_listfile, so a dots update reverts
   * modules/common/panels/lock/LockContext.qml  - facePam (PAM howdy), faceState machine
   * modules/ii/lock/LockSurface.qml             - face icon + status text in the toolbar
 
-faceState: "idle" | "scanning" | "success" | "failed"
+faceState: "idle" | "scanning" | "retrying" | "failed" | "success"
+Uyanınca (hypridle -> quickshell:lockFocus -> shouldReFocus) tarama otomatik yeniden başlar;
+tanınamazsa faceMaxAttempts kez otomatik dener, sonra simgeye tıklanarak yeniden denenir.
 Mirrors the stock fprintd flow: facePam starts from tryFingerUnlock() when the screen
 locks, so the camera scans as soon as the lid opens. Password typing keeps working
 (pam_howdy is `sufficient`). Face unlock is only attempted when pam_howdy.so exists.
@@ -40,6 +42,46 @@ def patch(path, edits, tail=None):
 
 
 CONTEXT_TAIL = '''
+    function startFaceScan() {
+        if (!root.faceAvailable || !GlobalStates.screenLocked || facePam.active) return;
+        root.faceAborting = false;
+        root.faceState = root.faceAttempts > 0 ? "retrying" : "scanning";
+        facePam.start();
+    }
+
+    function stopFaceScan() {
+        faceRetryTimer.stop();
+        faceWakeTimer.stop();
+        if (facePam.active) {
+            root.faceAborting = true;
+            facePam.abort();
+        }
+    }
+
+    // Uyanış: hypridle after_sleep_cmd -> quickshell:lockFocus -> shouldReFocus. Uyku öncesi başlayan
+    // tarama çoktan bitmiştir; USB kamera uyanana kadar kısa bekleyip taramayı yeniden başlat.
+    Connections {
+        target: root
+        function onShouldReFocus() {
+            if (root.faceAvailable && GlobalStates.screenLocked) faceWakeTimer.restart();
+        }
+    }
+    Timer {
+        id: faceWakeTimer
+        interval: 1200
+        onTriggered: {
+            if (!facePam.active) {
+                root.faceAttempts = 0;
+                root.startFaceScan();
+            }
+        }
+    }
+    Timer {
+        id: faceRetryTimer
+        interval: 700
+        onTriggered: root.startFaceScan()
+    }
+
     Process {
         id: faceCheckProc
         running: true
@@ -59,11 +101,20 @@ CONTEXT_TAIL = '''
             if (result == PamResult.Success) {
                 root.faceState = "success";
                 root.unlocked(root.targetAction);
-                stopFingerPam();
-            } else if (result == PamResult.Failed) {
-                root.faceState = "failed";   // not recognised; click the icon to retry
+                root.stopFingerPam();
+                return;
+            }
+            if (root.faceAborting) {            // bilinçli iptal (kilit açıldı / sıfırlandı)
+                root.faceAborting = false;
+                root.faceState = "idle";
+                return;
+            }
+            root.faceAttempts += 1;
+            if (root.faceAttempts < root.faceMaxAttempts && GlobalStates.screenLocked) {
+                root.faceState = "retrying";
+                faceRetryTimer.start();
             } else {
-                root.faceState = "idle";     // aborted / error: no retry loop
+                root.faceState = "failed";      // simgeye tıklayınca yeniden dener
             }
         }
     }
@@ -74,18 +125,17 @@ CONTEXT_EDITS = [
     ("    property bool fingerprintsConfigured: false\n",
      "    property bool fingerprintsConfigured: false\n"
      "    property bool faceAvailable: false\n"
-     "    property string faceState: \"idle\" // idle | scanning | success | failed\n"),
+     "    property string faceState: \"idle\" // idle | scanning | retrying | failed | success\n"
+     "    property int faceAttempts: 0\n"
+     "    readonly property int faceMaxAttempts: 3\n"
+     "    property bool faceAborting: false\n"),
     ("    function tryFingerUnlock() {\n",
      "    function tryFingerUnlock() {\n"
-     "        if (root.faceAvailable && !facePam.active) {\n"
-     "            root.faceState = \"scanning\";\n"
-     "            facePam.start();\n"
-     "        }\n"),
+     "        root.faceAttempts = 0;\n"
+     "        root.startFaceScan();\n"),
     ("    function stopFingerPam() {\n",
      "    function stopFingerPam() {\n"
-     "        if (facePam.active) {\n"
-     "            facePam.abort();\n"
-     "        }\n"),
+     "        root.stopFaceScan();\n"),
     ("    function reset() {\n",
      "    function reset() {\n"
      "        root.faceState = \"idle\";\n"),
@@ -108,7 +158,7 @@ SURFACE_FACE = '''        // Face (Howdy) - Windows Hello style
 
                 property real pulse: 1
                 SequentialAnimation on pulse {
-                    running: root.context.faceState === "scanning"
+                    running: root.context.faceState === "scanning" || root.context.faceState === "retrying"
                     loops: Animation.Infinite
                     NumberAnimation { to: 0.3; duration: 750; easing.type: Easing.InOutSine }
                     NumberAnimation { to: 1; duration: 750; easing.type: Easing.InOutSine }
@@ -120,7 +170,7 @@ SURFACE_FACE = '''        // Face (Howdy) - Windows Hello style
                     anchors.centerIn: parent
                     fill: root.context.faceState === "success" ? 1 : 0
                     iconSize: Appearance.font.pixelSize.hugeass
-                    opacity: root.context.faceState === "scanning" ? faceArea.pulse : 1
+                    opacity: (root.context.faceState === "scanning" || root.context.faceState === "retrying") ? faceArea.pulse : 1
                     text: {
                         switch (root.context.faceState) {
                         case "success": return "check_circle";
@@ -149,7 +199,8 @@ SURFACE_NEW_PLACEHOLDER = (
     '            placeholderText: {\n'
     '                if (GlobalStates.screenUnlockFailed) return Translation.tr("Incorrect password");\n'
     '                if (root.context.faceState === "scanning") return "Yüz taranıyor…";\n'
-    '                if (root.context.faceState === "failed") return "Yüz tanınmadı · şifre gir";\n'
+    '                if (root.context.faceState === "retrying") return "Tanınamadı, biraz yaklaş · tekrar deneniyor (" + (root.context.faceAttempts + 1) + "/" + root.context.faceMaxAttempts + ")";\n'
+    '                if (root.context.faceState === "failed") return "Yüz tanınamadı · simgeye tıkla ya da şifre gir";\n'
     '                return Translation.tr("Enter password");\n'
     '            }\n'
 )

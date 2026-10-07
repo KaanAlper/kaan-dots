@@ -36,5 +36,8 @@ python -m pip install --no-deps --upgrade --target /usr/lib/howdy "$TMP"/opencv_
 sed -i "s|^device_path = .*|device_path = $IR_DEV|" /etc/howdy/config.ini
 grep -n '^device_path' /etc/howdy/config.ini
 
+# algılama ayarları (karanlık eşiği vb.)
+bash "$(dirname "$0")/tune.sh"
+
 python -c "import sys; sys.path.insert(0,'/usr/lib/howdy'); import cv2; print('cv2 OK', cv2.__version__, cv2.__file__)"
 echo "Tamam. Sıradaki: sudo howdy add"
