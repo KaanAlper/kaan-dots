@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "name": "kaan-dots",
+  "items": [
+    {
+      "id": "qs-custom",
+      "title": "Quickshell özel ayarlar",
+      "desc": "Ses widget'ları (mono geçişi, çıkış seçici) ve kilit ekranı yüz tanıma yaması. Dots güncellemesinden sonra apply.sh ile geri yüklenir.",
+      "kind": "files",
+      "src": "items/qs-custom",
+      "dest": "~/.config/quickshell-custom",
+      "executable": [
+        "apply.sh",
+        "audio-mono-toggle.sh",
+        "patch-lock-howdy.py"
+      ],
+      "post": [
+        "bash ~/.config/quickshell-custom/apply.sh"
+      ]
+    },
+    {
+      "id": "hypr-custom",
+      "title": "Hyprland özel ayarlar",
+      "desc": "Kısayollar, pencere kuralları, hypridle (90 dk uyku) ve açılış komutları. Var olan dosyaların üzerine yazılmaz.",
+      "kind": "files",
+      "src": "items/hypr-custom",
+      "dest": "~/.config/hypr/custom",
+      "executable": [
+        "scripts/__restore_video_wallpaper.sh"
+      ]
+    },
+    {
+      "id": "howdy-packages",
+      "title": "Howdy paketleri",
+      "desc": "Yüz tanıma: python-dlib (CPU, CUDA'sız derlenir) ve howdy-git. Derleme birkaç dakika sürer, terminalde çalışır.",
+      "kind": "pkgs",
+      "pkgs": [
+        "python-dlib",
+        "howdy-git"
+      ],
+      "terminal": true,
+      "install": "bash {repo}/items/howdy-packages/install.sh"
+    },
+    {
+      "id": "howdy-config",
+      "title": "Howdy IR kamera ayarı",
+      "desc": "IR kamerayı bulup howdy'ye tanıtır ve vtk ile çakışan cv2 sorunu için kendi cv2'sini koyar. Yönetici parolası ister.",
+      "kind": "check",
+      "check": [
+        {
+          "exists": "/usr/lib/howdy/cv2"
+        },
+        {
+          "file_lacks": [
+            "/etc/howdy/config.ini",
+            "device_path = none"
+          ]
+        }
+      ],
+      "requires": [
+        "howdy-packages"
+      ],
+      "terminal": true,
+      "install": "sudo bash {repo}/items/howdy-config/setup.sh"
+    }
+  ]
+}

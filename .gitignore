@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.whl
+*.pkg.tar.*
+*.bak
