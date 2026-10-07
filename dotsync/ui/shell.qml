@@ -22,13 +22,28 @@ ShellRoot {
 
     readonly property string bin: Quickshell.env("DOTSYNC_BIN") || (Quickshell.env("HOME") + "/.local/share/dotsync/client/dotsync.py")
 
-    // 0 = eksikler, 1 = ilerleme, 2 = sonuç
-    property int page: 0
+    // Modlar: boot (varsayılan, yalnızca eksik varsa açılır) | setup (her zaman açılır) |
+    // bootstrap (ilk kurulum: önce installer'ın kendisi kurulur, sonra setup gibi devam eder)
+    readonly property string bootstrapPath: Quickshell.env("DOTSYNC_BOOTSTRAP") || ""
+    readonly property bool bootstrapMode: bootstrapPath !== ""
+    readonly property bool setupMode: bootstrapMode || Quickshell.env("DOTSYNC_MODE") === "setup"
+
+    // 0 = installer kurulumu (yalnızca ilk kurulumda), 1 = eksikler, 2 = ilerleme, 3 = sonuç
+    readonly property int firstPage: bootstrapMode ? 0 : 1
+    property int page: firstPage
+    property bool nothingToDo: false
+    property bool bootFailed: false
     property bool loading: true
     property string loadError: ""
     property int selectedCount: 0
     property bool allOk: true
 
+    ListModel {
+        id: bootSteps
+        ListElement { sid: "deps"; label: "Gerekli araçlar denetleniyor"; st: "wait" }
+        ListElement { sid: "client"; label: "Installer (dotsync) kuruluyor"; st: "wait" }
+        ListElement { sid: "cache"; label: "Ayar deposu hazırlanıyor"; st: "wait" }
+    }
     ListModel { id: items }      // id,title,desc,kind,terminal,missing,checked,runState,detail
     ListModel { id: resultRows }
 
@@ -55,7 +70,7 @@ ShellRoot {
         if (declines.length) args = args.concat(["--decline"]).concat(declines);
         applyProc.command = args;
         allOk = true;
-        page = 1;
+        page = 2;
         applyProc.running = true;
     }
 
@@ -76,12 +91,12 @@ ShellRoot {
         if (e.event === "start") setRun(e.id, "run", "");
         else if (e.event === "done") setRun(e.id, e.ok ? "ok" : "fail", e.detail);
         else if (e.event === "error") { allOk = false; loadError = e.detail; }
-        else if (e.event === "finished") page = 2;
+        else if (e.event === "finished") page = 3;
     }
 
     Process {
         id: statusProc
-        command: ["python3", root.bin, "status"]
+        command: root.setupMode ? ["python3", root.bin, "status", "--include-declined"] : ["python3", root.bin, "status"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -98,7 +113,13 @@ ShellRoot {
                     }
                     root.recount();
                     root.loading = false;
-                    if (items.count === 0) Qt.quit();
+                    if (items.count === 0) {
+                        if (!root.setupMode) Qt.quit();
+                        root.nothingToDo = true;
+                        root.page = 3;
+                    } else if (root.page === 0 || root.page === 3) {
+                        root.page = 1;
+                    }
                 } catch (err) {
                     root.loadError = "Durum okunamadı";
                     root.loading = false;
@@ -111,12 +132,34 @@ ShellRoot {
     Process {
         id: applyProc
         stdout: SplitParser { onRead: line => root.onEvent(line) }
-        onExited: code => { if (root.page === 1) root.page = 2; }
+        onExited: code => { if (root.page === 2) root.page = 3; }
     }
+
+    function bootStep(sid, state) {
+        for (var i = 0; i < bootSteps.count; i++)
+            if (bootSteps.get(i).sid === sid) bootSteps.setProperty(i, "st", state);
+    }
+
+    Process {
+        id: bootstrapProc
+        command: ["bash", root.bootstrapPath]
+        environment: ({ "DOTSYNC_PROGRESS": "1" })
+        stdout: SplitParser {
+            onRead: line => {
+                var m = line.match(/^STEP (başla|bitti) (\w+)$/);
+                if (m) root.bootStep(m[2], m[1] === "başla" ? "run" : "ok");
+            }
+        }
+        onExited: code => {
+            if (code === 0) afterBootstrap.start();
+            else root.bootFailed = true;
+        }
+    }
+    Timer { id: afterBootstrap; interval: 700; onTriggered: root.load() }
 
     Process { id: resetProc; command: ["python3", root.bin, "reset"]; onExited: root.load() }
 
-    Component.onCompleted: load()
+    Component.onCompleted: { if (bootstrapMode) bootstrapProc.running = true; else load(); }
 
     FloatingWindow {
         id: win
@@ -151,12 +194,12 @@ ShellRoot {
                     anchors.centerIn: parent
                     spacing: 8
                     Repeater {
-                        model: 3
+                        model: root.bootstrapMode ? 4 : 3
                         Rectangle {
-                            width: index === root.page ? 22 : 8
+                            width: (index + root.firstPage) === root.page ? 22 : 8
                             height: 8
                             radius: 4
-                            color: index <= root.page ? root.cAccent : root.cOutline
+                            color: (index + root.firstPage) <= root.page ? root.cAccent : root.cOutline
                             Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                             Behavior on color { ColorAnimation { duration: 220 } }
                         }
@@ -186,7 +229,56 @@ ShellRoot {
                     height: viewport.height
                     Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
-                    // ============ Sayfa 0: eksikler
+                    // ============ Sayfa 0: installer kurulumu (yalnızca ilk kurulumda görünür)
+                    Item {
+                        width: viewport.width; height: viewport.height
+                        ColumnLayout {
+                            anchors { fill: parent; leftMargin: 32; rightMargin: 32; topMargin: 4; bottomMargin: 24 }
+                            spacing: 14
+                            Text { text: "Kuruluma hoş geldin"; color: root.cFg; font.pixelSize: 24; font.weight: Font.DemiBold }
+                            Text {
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap
+                                text: root.bootFailed
+                                    ? "Installer kurulamadı. Terminalde ~/kaan-dots/bootstrap.sh çalıştırıp hatayı görebilirsin."
+                                    : "Önce installer'ın kendisi kuruluyor. Sonraki açılışlarda bu adım olmaz; yalnızca sistemde eksik olanlar sorulur."
+                                color: root.bootFailed ? root.cErr : root.cSub; font.pixelSize: 13
+                            }
+                            Repeater {
+                                model: bootSteps
+                                delegate: RowLayout {
+                                    Layout.fillWidth: true; Layout.topMargin: 6; spacing: 14
+                                    Rectangle {
+                                        width: 22; height: 22; radius: 11
+                                        color: model.st === "ok" ? root.cOk : "transparent"
+                                        border.color: model.st === "run" ? root.cAccent : root.cOutline
+                                        border.width: model.st === "ok" ? 0 : 2
+                                        Text { anchors.centerIn: parent; visible: model.st === "ok"; text: "✓"; color: root.cBg; font.pixelSize: 13; font.weight: Font.Bold }
+                                        Rectangle {
+                                            visible: model.st === "run"
+                                            anchors.centerIn: parent; width: 8; height: 8; radius: 4; color: root.cAccent
+                                            SequentialAnimation on opacity {
+                                                running: model.st === "run"; loops: Animation.Infinite
+                                                NumberAnimation { to: 0.2; duration: 600; easing.type: Easing.InOutSine }
+                                                NumberAnimation { to: 1; duration: 600; easing.type: Easing.InOutSine }
+                                            }
+                                        }
+                                    }
+                                    Text { text: model.label; color: model.st === "wait" ? root.cDim : root.cFg; font.pixelSize: 14 }
+                                }
+                            }
+                            Item { Layout.fillHeight: true }
+                            Rectangle {
+                                visible: root.bootFailed
+                                Layout.alignment: Qt.AlignRight
+                                implicitWidth: failTxt.implicitWidth + 44; implicitHeight: 42; radius: 21
+                                color: root.cAccent
+                                Text { id: failTxt; anchors.centerIn: parent; text: "Kapat"; color: root.cBg; font.pixelSize: 14; font.weight: Font.DemiBold }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Qt.quit() }
+                            }
+                        }
+                    }
+
+                    // ============ Sayfa 1: eksikler
                     Item {
                         width: viewport.width; height: viewport.height
 
@@ -195,7 +287,7 @@ ShellRoot {
                             spacing: 14
 
                             Text {
-                                text: root.loading ? "Denetleniyor…" : "Yerelde eksik olanlar"
+                                text: root.loading ? "Denetleniyor…" : (root.setupMode ? "Neleri kuralım?" : "Yerelde eksik olanlar")
                                 color: root.cFg; font.pixelSize: 24; font.weight: Font.DemiBold
                             }
                             Text {
@@ -300,7 +392,7 @@ ShellRoot {
                         }
                     }
 
-                    // ============ Sayfa 1: ilerleme
+                    // ============ Sayfa 2: ilerleme
                     Item {
                         width: viewport.width; height: viewport.height
                         ColumnLayout {
@@ -361,7 +453,7 @@ ShellRoot {
                         }
                     }
 
-                    // ============ Sayfa 2: sonuç
+                    // ============ Sayfa 3: sonuç
                     Item {
                         width: viewport.width; height: viewport.height
                         ColumnLayout {
@@ -376,12 +468,14 @@ ShellRoot {
                             }
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: root.allOk ? "Hazır" : "Bazı adımlar tamamlanamadı"
+                                text: root.nothingToDo ? "Her şey zaten kurulu" : (root.allOk ? "Hazır" : "Bazı adımlar tamamlanamadı")
                                 color: root.cFg; font.pixelSize: 26; font.weight: Font.DemiBold
                             }
                             Text {
                                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
-                                text: root.allOk
+                                text: root.nothingToDo
+                                    ? "Bu bilgisayarda eksik bir şey yok. Sonraki açılışlarda yalnızca yeni bir şey eksik kalırsa sorulur."
+                                    : root.allOk
                                     ? "Seçtiklerin kuruldu. İndirmediklerin için bir daha sorulmayacak (Reddedilenleri sıfırla ile geri açabilirsin)."
                                     : "Hata veren adımlar açılışta tekrar önerilir. Ayrıntı için ilerleme sayfasındaki satırlara bak."
                                 color: root.cSub; font.pixelSize: 13

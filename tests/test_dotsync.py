@@ -174,6 +174,7 @@ def cli_env(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(data))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
     monkeypatch.setenv("DOTSYNC_NO_UI", "1")
+    monkeypatch.setattr(dotsync, "sync", lambda *a, **k: True)  # testler ağa/gh'a gitmesin
     repo = make_repo(tmp_path)
     (data / "dotsync").mkdir(parents=True)
     (data / "dotsync" / "repo").symlink_to(repo)
@@ -253,3 +254,44 @@ def test_boot_is_silent_and_does_not_launch_ui_when_nothing_pending(cli_env, mon
     monkeypatch.setenv("XDG_STATE_HOME", str(cli_env / "xdg-state"))
     monkeypatch.setenv("DOTSYNC_NO_UI", "1")
     assert dotsync.main(["boot"]) == 0
+
+
+def test_status_include_declined_clears_declined_flag(cli_env, capsys):
+    dotsync.main(["decline", "a"])
+    dotsync.main(["status", "--include-declined"])
+    data = json.loads(capsys.readouterr().out)
+    assert "a" in data["pending"]
+    assert all(not i["declined"] for i in data["items"])
+
+
+def test_setup_always_launches_ui_in_setup_mode(cli_env, monkeypatch):
+    monkeypatch.delenv("DOTSYNC_NO_UI")
+    dotsync.main(["decline", "a", "p", "c"])  # hiçbiri bekleyen değil
+    launched = {}
+
+    def fake_run(cmd, env=None, **_kw):
+        launched["cmd"], launched["env"] = cmd, env
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(dotsync.subprocess, "run", fake_run)
+    assert dotsync.main(["setup"]) == 0
+    assert launched["cmd"][0] == "qs" and launched["cmd"][1] == "-p"
+    assert launched["env"]["DOTSYNC_MODE"] == "setup"
+
+
+def test_setup_respects_no_ui(cli_env, monkeypatch):
+    monkeypatch.setattr(dotsync.subprocess, "run", lambda *a, **k: pytest.fail("UI açılmamalıydı"))
+    assert dotsync.main(["setup"]) == 0
+
+
+def test_boot_does_not_set_setup_mode(cli_env, monkeypatch):
+    monkeypatch.delenv("DOTSYNC_NO_UI")
+    launched = {}
+
+    def fake_run(cmd, env=None, **_kw):
+        launched["env"] = env
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(dotsync.subprocess, "run", fake_run)
+    dotsync.main(["boot"])
+    assert "DOTSYNC_MODE" not in launched["env"]

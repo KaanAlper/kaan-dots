@@ -5,24 +5,32 @@
 # İstemci repo'dan OTOMATİK güncellenmez (güvenlik): güncellemek için bu betiği tekrar çalıştır.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Arayüz için ilerleme satırları (DOTSYNC_PROGRESS=1): "STEP <başla|bitti> <id>"
+step() { if [ -n "${DOTSYNC_PROGRESS:-}" ]; then echo "STEP $1 $2"; fi; }
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/dotsync"
 CLIENT="$DATA/client"
 BIN="$HOME/.local/bin"
 
+step başla deps
 command -v gh >/dev/null || { echo "gh gerekli: sudo pacman -S github-cli" >&2; exit 1; }
 command -v qs >/dev/null || echo "uyarı: quickshell (qs) yok; arayüz açılmaz, 'dotsync status' çalışır." >&2
+step bitti deps
 
+step başla client
 mkdir -p "$CLIENT" "$BIN"
 rm -rf "$CLIENT/ui"
 cp -r "$HERE/dotsync/dotsync.py" "$HERE/dotsync/ui" "$CLIENT/"
 chmod +x "$CLIENT/dotsync.py"
 ln -sf "$CLIENT/dotsync.py" "$BIN/dotsync"
+step bitti client
 
 # Repo önbelleği: yoksa GitHub'dan klonla (origin adresinden sahip/ad çıkarılır).
+step başla cache
 if [ ! -d "$DATA/repo/.git" ]; then
     SLUG="$(git -C "$HERE" remote get-url origin | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
     mkdir -p "$DATA"
     gh repo clone "$SLUG" "$DATA/repo" -- --depth 1
 fi
+step bitti cache
 echo "dotsync kuruldu: $BIN/dotsync   (PATH'te değilse: export PATH=\$HOME/.local/bin:\$PATH)"
 echo "Şimdi: dotsync status"

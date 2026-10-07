@@ -8,7 +8,7 @@ Güvenlik modeli
   * Dosya kurulumu yalnızca YEREL OLARAK OLMAYAN dosyaları kopyalar, varsa dokunmaz.
   * Bu istemci repo'dan otomatik güncellenmez (bootstrap ile bir kez kurulur).
 
-Komutlar: status [--sync] | apply ID... [--decline ID...] | decline ID... | reset | sync | boot
+Komutlar: status [--sync] [--include-declined] | apply ID... [--decline ID...] | decline ID... | reset | sync | boot | setup
 """
 from __future__ import annotations
 
@@ -289,7 +289,8 @@ def _load(do_sync: bool) -> tuple[dict, Path]:
 
 def cmd_status(args: argparse.Namespace) -> int:
     manifest, repo = _load(args.sync)
-    status = compute_status(manifest, repo, load_declined(state_dir()))
+    declined = set() if args.include_declined else load_declined(state_dir())
+    status = compute_status(manifest, repo, declined)
     print(json.dumps({"items": status, "pending": [s["id"] for s in pending(status)]}, ensure_ascii=False))
     return 0
 
@@ -389,6 +390,14 @@ def cmd_sync(_args: argparse.Namespace) -> int:
     return 0 if sync(repo_dir(), repo_name()) else 1
 
 
+def _launch_ui(mode: str | None) -> int:
+    ui = Path(__file__).resolve().parent / "ui"
+    env = {**os.environ, "DOTSYNC_BIN": str(Path(__file__).resolve())}
+    if mode:
+        env["DOTSYNC_MODE"] = mode
+    return subprocess.run(["qs", "-p", str(ui)], env=env, check=False).returncode
+
+
 def cmd_boot(_args: argparse.Namespace) -> int:
     """Açılış denetimi: sessiz; yalnızca bekleyen (ve reddedilmemiş) eksik varsa arayüz açar."""
     try:
@@ -399,9 +408,15 @@ def cmd_boot(_args: argparse.Namespace) -> int:
     status = compute_status(manifest, repo, load_declined(state_dir()))
     if not pending(status) or os.environ.get("DOTSYNC_NO_UI"):
         return 0
-    ui = Path(__file__).resolve().parent / "ui"
-    env = {**os.environ, "DOTSYNC_BIN": str(Path(__file__).resolve())}
-    return subprocess.run(["qs", "-p", str(ui)], env=env, check=False).returncode
+    return _launch_ui(None)
+
+
+def cmd_setup(_args: argparse.Namespace) -> int:
+    """Kurulum ekranı: her zaman açılır, reddedilenleri de gösterir, eksik yoksa 'hepsi kurulu' der."""
+    _load(True)  # önbelleği tazele; ManifestError main'de yakalanır
+    if os.environ.get("DOTSYNC_NO_UI"):
+        return 0
+    return _launch_ui("setup")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -410,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("status")
     p.add_argument("--sync", action="store_true")
+    p.add_argument("--include-declined", action="store_true", help="reddedilenleri de bekleyen say")
     p.set_defaults(fn=cmd_status)
 
     p = sub.add_parser("apply")
@@ -424,6 +440,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("reset").set_defaults(fn=cmd_reset)
     sub.add_parser("sync").set_defaults(fn=cmd_sync)
     sub.add_parser("boot").set_defaults(fn=cmd_boot)
+    sub.add_parser("setup").set_defaults(fn=cmd_setup)
 
     args = parser.parse_args(argv)
     try:
