@@ -4,7 +4,7 @@
 Güvenlik modeli
   * Açılışta çalışan `boot` yalnızca VERİ okur (manifest + dosya varlığı + paket sorgusu).
     Manifestten gelen hiçbir komut kullanıcı onayı olmadan çalıştırılmaz.
-  * Denetimler (`check`) bildirimsel: exists / file_lacks. Kabuk komutu yok.
+  * Denetimler (`check`) bildirimsel: exists / file_has / file_lacks. Kabuk komutu yok.
   * Dosya kurulumu yalnızca YEREL OLARAK OLMAYAN dosyaları kopyalar, varsa dokunmaz.
   * Bu istemci repo'dan otomatik güncellenmez (bootstrap ile bir kez kurulur).
 
@@ -127,6 +127,15 @@ def _failed_conditions(conds: Iterable[dict]) -> list[str]:
     for cond in conds:
         if "exists" in cond and not os.path.exists(expand(cond["exists"])):
             failed.append(f"yok: {cond['exists']}")
+        elif "file_has" in cond:
+            path, needle = cond["file_has"]
+            try:
+                text = expand(path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                failed.append(f"okunamadı: {path}")
+                continue
+            if needle not in text:
+                failed.append(f"{path} içinde '{needle}' yok")
         elif "file_lacks" in cond:
             path, needle = cond["file_lacks"]
             try:

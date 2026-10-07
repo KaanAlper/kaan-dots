@@ -295,3 +295,13 @@ def test_boot_does_not_set_setup_mode(cli_env, monkeypatch):
     monkeypatch.setattr(dotsync.subprocess, "run", fake_run)
     dotsync.main(["boot"])
     assert "DOTSYNC_MODE" not in launched["env"]
+
+
+def test_check_file_has_condition(tmp_path):
+    cfg = tmp_path / "pam"
+    conds = [{"file_has": [str(cfg), "pam_howdy.so"]}]
+    assert dotsync._failed_conditions(conds)  # dosya yok -> başarısız
+    cfg.write_text("auth include system-login\n")
+    assert dotsync._failed_conditions(conds)  # satır yok -> başarısız
+    cfg.write_text("auth sufficient pam_howdy.so\nauth include system-login\n")
+    assert dotsync._failed_conditions(conds) == []
