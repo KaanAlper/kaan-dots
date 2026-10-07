@@ -30,6 +30,14 @@
       ]
     },
     {
+      "id": "fish-settings",
+      "title": "Fish ayarları",
+      "desc": "Bash alışkanlıkları fish'te hata vermesin: $? otomatik $status olur, !! çalışır, b '...' ve bp (panodaki bash betiğini onaylı çalıştır) eklenir. Starship geçici prompt'una dokunmaz.",
+      "kind": "files",
+      "src": "items/fish-config",
+      "dest": "~/.config/fish"
+    },
+    {
       "id": "howdy-packages",
       "title": "Howdy paketleri",
       "desc": "Yüz tanıma: python-dlib (CPU, CUDA'sız derlenir) ve howdy-git. Derleme birkaç dakika sürer, terminalde çalışır.",
