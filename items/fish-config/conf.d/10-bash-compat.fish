@@ -1,63 +1,113 @@
-# Bash alışkanlıkları fish'te hata vermesin diye küçük bir uyumluluk katmanı (kaan-dots / "Fish ayarları").
-#   $?        -> $status      (fish 4: "$? is not the exit status" ayrıştırma hatası; Enter'a basınca düzeltilir)
-#   !!        -> son komut    (örn. `sudo !!`)
-#   b '...'   -> bash -c ile çalıştır   (örn. b 'cd /x && python y; echo $?')
-#   bp        -> panodaki bash betiğini göster, onay al, bash ile çalıştır (heredoc/for-do-done gibi fish'te
-#                çalışmayan çok satırlı betikler için)
+# Bash alışkanlıkları fish'te hata vermesin diye uyumluluk katmanı (kaan-dots / "Fish ayarları").
+#
+# Enter'a basınca komut satırı taranır (tırnak içi hariç):
+#   $?                          -> $status
+#   $!                          -> $last_pid
+#   [[ ]], ;do/;then/;done/;fi, -> komut `bash -c '...'` olarak yeniden yazılır (bash'e yönlendirilir)
+#   <<heredoc, ${VAR}, $((x)),     NOT: bash'e yönlendirilen komutun cd/export gibi yan etkileri fish
+#   `backtick`, $'..', f() {}      oturumuna GEÇMEZ (çocuk süreçte çalışır). Normal fish komutlarına dokunulmaz.
+#   !!                          -> son komut (örn. `sudo !!`)
+# Yardımcılar: b '...' (bash -c)  ·  bp (panodaki bash betiğini onayla + çalıştır)  ·  unset VAR
 # Bağımlılık yok. Kaldırmak için bu dosyayı sil.
 
 status is-interactive; or return
 
-function __bashcompat_fix --description 'tırnak DIŞINDAKİ $? ifadesini $status yap'
+function __bashcompat_fix --description 'Enter öncesi: bash-ism düzelt ya da bash`e yönlendir'
     set -l cmd (commandline | string collect)
-    string match -q -r -- '\$\?' $cmd; or return
-    # Tırnak içindekine dokunma: `b 'echo $?'` gibi bash'e gidecek metin bozulmasın.
+    # Hızlı ön eleme: sıradan komutlarda tarama maliyeti yok.
+    string match -q -r -- '\$[?!]|\[\[|;\s*(do|then|done|fi|esac)\b|^\s*(done|fi|esac)\b|<<|\$\(\(|\$\{|`|\$\x27|^\s*\w+\(\)\s*\{' $cmd; or return
+
+    # Tek geçiş: out = $?/$! çevrilmiş kopya; all = her iki tırnağın içi boşaltılmış; sng = yalnız tek tırnak içi boşaltılmış.
     # (`test` yerine switch/string: karşılaştırılan karakter `!` ya da `-a` olunca test bozulur.)
     set -l chars (string split '' -- $cmd)
     set -l n (count $chars)
     set -l out ''
+    set -l all ''
+    set -l sng ''
     set -l quote ''
+    set -l skip 0
     set -l i 1
     while test $i -le $n
         set -l c $chars[$i]
         if test -n "$quote"
             if string match -q -- $quote $c
                 set quote ''
+                set all "$all$c"
+                set sng "$sng$c"
+            else if string match -q -- '"' $quote
+                set all "$all "
+                set sng "$sng$c"
+            else
+                set all "$all "
+                set sng "$sng "
             end
             set out "$out$c"
         else
             switch $c
                 case '\\'
-                    set out "$out$c"
-                    if test $i -lt $n
-                        set i (math $i + 1)
-                        set out "$out$chars[$i]"
-                    end
+                    set -l nx ''
+                    test $i -lt $n; and set nx $chars[(math $i + 1)]
+                    set out "$out$c$nx"
+                    set all "$all$c$nx"
+                    set sng "$sng$c$nx"
+                    set i (math $i + 1)
                 case "'" '"'
                     set quote $c
                     set out "$out$c"
+                    set all "$all$c"
+                    set sng "$sng$c"
                 case '$'
-                    set -l nxt ''
-                    test $i -lt $n; and set nxt $chars[(math $i + 1)]
-                    if string match -q -r -- '^\?$' $nxt
+                    set -l nx ''
+                    test $i -lt $n; and set nx $chars[(math $i + 1)]
+                    set all "$all$c"
+                    set sng "$sng$c"
+                    if string match -q -r -- '^\?$' $nx
                         set out "$out"'$status'
-                        set i (math $i + 1)
+                        set skip 1
+                    else if string match -q -r -- '^!$' $nx
+                        set out "$out"'$last_pid'
+                        set skip 1
                     else
                         set out "$out$c"
                     end
                 case '*'
-                    set out "$out$c"
+                    if test $skip -eq 1
+                        set skip 0
+                    else
+                        set out "$out$c"
+                    end
+                    set all "$all$c"
+                    set sng "$sng$c"
             end
         end
         set i (math $i + 1)
     end
-    commandline -r -- $out
+
+    set -l bashy 0
+    if string match -q -r -- '\[\[|;\s*(do|then|done|fi|esac)\b|^\s*(done|fi|esac)\b|<<|^\s*\w+\(\)\s*\{' $all
+        set bashy 1
+    else if string match -q -r -- '\$\(\(|\$\{|`|\$\x27' $sng
+        set bashy 1
+    end
+
+    if test $bashy -eq 1
+        # Zaten bash/sh ile başlıyorsa dokunma.
+        string match -q -r -- '^\s*(sudo\s+)?(bash|sh|zsh|dash|fish|b|bp)\b' $all; and return
+        commandline -r -- "bash -c "(string escape --style=script -- $cmd)
+        return
+    end
+
+    test "$out" != "$cmd"; and commandline -r -- $out
 end
 
 function __bashcompat_last_cmd
     echo $history[1]
 end
 abbr -a '!!' --position anywhere --function __bashcompat_last_cmd
+
+function unset --description 'bash unset: değişkeni sil'
+    set -e $argv
+end
 
 function b --description 'argümanı bash -c ile çalıştır'
     bash -c "$argv"
@@ -79,7 +129,7 @@ function bp --description 'panodaki bash betiğini onayla ve bash ile çalışt�
 end
 
 # Enter bağını, diğer her şey (starship geçici prompt vb.) yüklendikten SONRA, ilk prompt'ta sar:
-# önce $? düzeltmesi, sonra eskiden bağlı olan eylem. Tek seferlik.
+# önce bash-ism düzeltmesi, sonra eskiden bağlı olan eylem. Tek seferlik.
 # Not: `execute` gibi giriş fonksiyonları fish komutu değildir; `commandline -f` ile çağrılır.
 function __bashcompat_install --on-event fish_prompt
     functions -e __bashcompat_install
