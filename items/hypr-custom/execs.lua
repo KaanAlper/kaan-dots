@@ -17,6 +17,8 @@ hl.on("hyprland.start", function ()
     -- dotsync: GitHub'daki kaan-dots ile yerel ayarları karşılaştırır; yalnızca eksik (ve reddedilmemiş)
     -- bir şey varsa eksikler penceresini açar, aksi hâlde sessizdir. Ağ yoksa önbellekle çalışır.
     hl.exec_cmd("sleep 12; $HOME/.local/bin/dotsync boot")
+    -- Alt+Tab window switcher (its own Quickshell instance; keys in custom/keybinds.lua)
+    hl.exec_cmd("sleep 3; qs -p $HOME/.config/hypr/custom/alttab/shell.qml")
     -- MSI fan/performans kontrolü (MControlCenter), Quickshell'in SNI host'u hazir olsun diye 4sn bekliyor
     hl.exec_cmd("sleep 4 && mcontrolcenter")
 end)

@@ -11,8 +11,8 @@ Hiçbir şey eksik değilse pencere açılmaz.
 
 | id | ne | nasıl denetlenir |
 |---|---|---|
-| `qs-custom` | quickshell ses widget'ları + kilit ekranı yüz tanıma yaması (`apply.sh`) | dosyalar var mı |
-| `hypr-custom` | Hyprland kısayol/kural/hypridle/execs | dosyalar var mı |
+| `qs-custom` | quickshell bar widget'ları (ses, mikser, uyku ayı) + kilit ekranı yüz tanıma yaması (`apply.sh`) | dosyalar var mı |
+| `hypr-custom` | Hyprland kısayol/kural/hypridle/execs + Alt+Tab değiştirici (`alttab/`) | dosyalar var mı |
 | `howdy-packages` | `python-dlib` (CPU) + `howdy-git` | `pacman -Q` |
 | `howdy-config` | IR kamera + cv2 çakışma çözümü | bildirimsel kontrol |
 

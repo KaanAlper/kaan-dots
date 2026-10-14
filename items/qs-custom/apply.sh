@@ -4,6 +4,8 @@
 # Widgets restored here:
 #   - AudioMonoToggle    — mono/stereo output downmix toggle (uses scripts/audio-mono-toggle.sh)
 #   - AudioOutputSwitcher — pick the default output device from a hover popup (pure QML)
+#   - SleepInhibitToggle  — moon icon: block sleep/idle/lid-close (uses scripts/sleep-inhibit-toggle.sh)
+#   - AppVolumeMixer      — per-app volume mixer popup, EarTrumpet-style (pure QML)
 #
 # The dots updater overwrites tracked files (notably BarContent.qml, which IS in
 # ~/.config/illogical-impulse/installed_listfile) and may delete untracked files,
@@ -29,9 +31,13 @@ cp "$CUSTOM_DIR/audio-mono-toggle.sh" "$II/scripts/audio-mono-toggle.sh"
 chmod +x "$II/scripts/audio-mono-toggle.sh"
 cp "$CUSTOM_DIR/AudioMonoToggle.qml" "$BAR/AudioMonoToggle.qml"
 cp "$CUSTOM_DIR/AudioOutputSwitcher.qml" "$BAR/AudioOutputSwitcher.qml"
+cp "$CUSTOM_DIR/sleep-inhibit-toggle.sh" "$II/scripts/sleep-inhibit-toggle.sh"
+chmod +x "$II/scripts/sleep-inhibit-toggle.sh"
+cp "$CUSTOM_DIR/SleepInhibitToggle.qml" "$BAR/SleepInhibitToggle.qml"
+cp "$CUSTOM_DIR/AppVolumeMixer.qml" "$BAR/AppVolumeMixer.qml"
 
 # 2) Idempotently insert each widget into BarContent.qml (right section, before SysTray).
-#    Order ends up: ... AudioMonoToggle, AudioOutputSwitcher, SysTray ...
+#    Order ends up: ... SleepInhibitToggle, AudioMonoToggle, AudioOutputSwitcher, AppVolumeMixer, SysTray ...
 python3 - "$BAR/BarContent.qml" <<'PY'
 import sys
 path = sys.argv[1]
@@ -40,6 +46,14 @@ with open(path, encoding="utf-8") as f:
 
 # Each widget: name used for the "already patched?" guard, and the block to insert.
 widgets = [
+    ("SleepInhibitToggle",
+     "            SleepInhibitToggle {\n"
+     "                visible: root.useShortenedForm < 2\n"
+     "                Layout.alignment: Qt.AlignVCenter\n"
+     "                Layout.leftMargin: 4\n"
+     "                Layout.rightMargin: 4\n"
+     "            }\n"
+     "\n"),
     ("AudioMonoToggle",
      "            AudioMonoToggle {\n"
      "                visible: root.useShortenedForm < 2\n"
@@ -50,6 +64,14 @@ widgets = [
      "\n"),
     ("AudioOutputSwitcher",
      "            AudioOutputSwitcher {\n"
+     "                visible: root.useShortenedForm < 2\n"
+     "                Layout.alignment: Qt.AlignVCenter\n"
+     "                Layout.leftMargin: 4\n"
+     "                Layout.rightMargin: 4\n"
+     "            }\n"
+     "\n"),
+    ("AppVolumeMixer",
+     "            AppVolumeMixer {\n"
      "                visible: root.useShortenedForm < 2\n"
      "                Layout.alignment: Qt.AlignVCenter\n"
      "                Layout.leftMargin: 4\n"
