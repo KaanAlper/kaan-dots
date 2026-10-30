@@ -15,6 +15,20 @@
         "patch-lock-howdy.py",
         "sleep-inhibit-toggle.sh"
       ],
+      "check": [
+        {
+          "file_has": [
+            "~/.config/quickshell/ii/modules/ii/bar/BarContent.qml",
+            "AudioMonoToggle"
+          ]
+        },
+        {
+          "file_has": [
+            "~/.config/quickshell/ii/modules/ii/lock/LockSurface.qml",
+            "faceState"
+          ]
+        }
+      ],
       "post": [
         "bash ~/.config/quickshell-custom/apply.sh"
       ]

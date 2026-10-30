@@ -316,3 +316,51 @@ def test_status_exposes_default_checked_flag(tmp_path):
         dotsync.load_manifest(repo), repo, set(), is_pkg_installed=lambda p: False)}
     assert status["p"]["default"] is False
     assert status["a"]["default"] is True
+
+
+def test_files_item_with_check_fails_if_check_fails_even_if_files_exist(tmp_path):
+    repo = make_repo(tmp_path)
+    manifest = json.loads((repo / "manifest.json").read_text())
+    patched_file = tmp_path / "patched.txt"
+    manifest["items"][0]["check"] = [{"file_has": [str(patched_file), "WIDGET_OK"]}]
+    (repo / "manifest.json").write_text(json.dumps(manifest))
+
+    # Dosyaların hepsi dest içinde var:
+    dest = tmp_path / "home/a"
+    (dest / "sub").mkdir(parents=True)
+    for rel in ("one.txt", "run.sh", "sub/two.txt"):
+        (dest / rel).write_text("x")
+
+    # Ama check dosyası yok/içermiyor -> missing olmalı:
+    s = dotsync.compute_status(dotsync.load_manifest(repo), repo, set())[0]
+    assert s["state"] == "missing"
+    assert any("WIDGET_OK" in m or "okunamadı" in m for m in s["missing"])
+
+    # Şimdi check koşulu sağlansın -> ok olmalı:
+    patched_file.write_text("WIDGET_OK\n")
+    s = dotsync.compute_status(dotsync.load_manifest(repo), repo, set())[0]
+    assert s["state"] == "ok"
+
+
+def test_apply_files_item_reapplies_post_when_files_exist_but_check_fails(cli_env, capsys):
+    repo = dotsync.repo_dir()
+    manifest = json.loads((repo / "manifest.json").read_text())
+    target = cli_env / "bar.qml"
+    manifest["items"][0]["check"] = [{"file_has": [str(target), "INJECTED"]}]
+    manifest["items"][0]["post"] = [f"echo INJECTED > {target}"]
+    (repo / "manifest.json").write_text(json.dumps(manifest))
+
+    # Dosyaları yerelde oluştur (böylece 0 dosya kopyalanacak ama post çalışacak):
+    dest = Path(manifest["items"][0]["dest"])
+    (dest / "sub").mkdir(parents=True, exist_ok=True)
+    for rel in ("one.txt", "run.sh", "sub/two.txt"):
+        (dest / rel).write_text("x")
+
+    rc = dotsync.main(["apply", "a"])
+    out = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
+    assert rc == 0
+    assert target.read_text().strip() == "INJECTED"
+    done = [e for e in out if e.get("event") == "done" and e.get("id") == "a"][0]
+    assert done["ok"] is True
+    assert done["detail"] == "uygulandı"
+

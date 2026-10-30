@@ -151,7 +151,10 @@ def _failed_conditions(conds: Iterable[dict]) -> list[str]:
 def _missing(item: dict, repo: Path, is_pkg_installed: Callable[[str], bool]) -> list[str]:
     kind = item["kind"]
     if kind == "files":
-        return [rel for rel, _src, dest in _file_pairs(item, repo) if not os.path.lexists(dest)]
+        missing = [rel for rel, _src, dest in _file_pairs(item, repo) if not os.path.lexists(dest)]
+        if "check" in item:
+            missing.extend(_failed_conditions(item["check"]))
+        return missing
     if kind == "pkgs":
         return [p for p in item["pkgs"] if not is_pkg_installed(p)]
     return _failed_conditions(item.get("check", []))
@@ -354,7 +357,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
             # Çıkış koduna değil gerçek duruma güven: öğe artık eksiksiz mi?
             now = {s["id"]: s for s in compute_status(manifest, repo, set())}[iid]
             ok = ran and now["state"] == "ok"
-            detail = f"{len(copied)} dosya kopyalandı" if item["kind"] == "files" else ""
+            detail = f"{len(copied)} dosya kopyalandı" if item["kind"] == "files" and copied else ("uygulandı" if item["kind"] == "files" else "")
             if not ok and now["missing"]:
                 detail = "eksik kaldı: " + ", ".join(now["missing"][:3])
         except OSError as exc:
